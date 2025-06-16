@@ -23,12 +23,15 @@ class LRUCache<K, V> {
     if (this.cache.has(key)) {
       this.cache.delete(key);
     } else if (this.cache.size >= this.maxSize) {
-      // Remove least recently used (first item)
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      const iteratorResult = this.cache.keys().next();
+      if (!iteratorResult.done) {
+        const firstKey = iteratorResult.value;
+        this.cache.delete(firstKey);
+      }
     }
     this.cache.set(key, value);
   }
+
 
   clear(): void {
     this.cache.clear();
@@ -151,19 +154,6 @@ function recalculateNodeRecursive(node: HierarchyNode): HierarchyNode {
     updatedNode.calculatedValue = calculateNodeValue(updatedNode, true);
     return updatedNode;
   }
-}
-
-export function findNodeById(root: HierarchyNode, id: string): HierarchyNode | null {
-  if (root.id === id) return root;
-  
-  if (root.children) {
-    for (const child of root.children) {
-      const found = findNodeById(child, id);
-      if (found) return found;
-    }
-  }
-  
-  return null;
 }
 
 // Optimized bulk operations with batching

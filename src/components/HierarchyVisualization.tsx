@@ -1,4 +1,4 @@
-import  { useEffect, useRef, useState } from 'react';
+import  { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as d3 from 'd3';
 import { HierarchyNode, VisualizationConfig } from '../types/hierarchy';
 import { useHierarchyStore } from '../store/hierarchyStore';
@@ -15,64 +15,37 @@ export default function HierarchyVisualization({ data, config, onNodeClick, onNo
   const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
   const { uiSettings } = useHierarchyStore();
 
-  useEffect(() => {
-    const handleResize = () => {
-      if (svgRef.current?.parentElement) {
-        const rect = svgRef.current.parentElement.getBoundingClientRect();
-        setDimensions({
-          width: Math.max(800, rect.width - 40),
-          height: Math.max(600, rect.height - 40)
-        });
+  // Memoize filtered data to avoid recalculating on every render
+  const filteredData = useMemo(() => {
+    if (!data) return null;
+
+    const filterNode = (node: HierarchyNode): HierarchyNode | null => {
+      const matchesSearch = !uiSettings.searchTerm ||
+          node.name.toLowerCase().includes(uiSettings.searchTerm.toLowerCase());
+
+      const matchesStatusFilter = uiSettings.statusFilter === 'all' ||
+          node.status === uiSettings.statusFilter;
+
+      if (!matchesSearch || !matchesStatusFilter) {
+        return null;
       }
+
+      const filteredChildren = node.children?.map(filterNode).filter(Boolean) as HierarchyNode[] | undefined;
+
+      return {
+        ...node,
+        children: filteredChildren
+      };
     };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return filterNode(data);
+  }, [data, uiSettings.searchTerm, uiSettings.statusFilter]);
 
-  useEffect(() => {
-    if (!svgRef.current || !data) return;
-
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
-
-    // Use UI settings for node dimensions
-    const nodeWidth = config.nodeWidth;
-    const nodeHeight = Math.max(config.nodeHeight, uiSettings.nodeHeight);
-    const fontSize = uiSettings.fontSize;
-
-    // Create hierarchy from data
-    const root = d3.hierarchy(data, d => d.children);
-    
-    // Create tree layout with dynamic spacing based on UI settings
-    const treeLayout = d3.tree<HierarchyNode>()
-      .size([dimensions.height - 100, dimensions.width - 200])
-      .separation((a, b) => {
-        const aWidth = a.data.name.length * (fontSize * 0.6) + nodeWidth;
-        const bWidth = b.data.name.length * (fontSize * 0.6) + nodeWidth;
-        return (aWidth + bWidth) / (nodeWidth * 2);
-      });
-
-    const treeData = treeLayout(root);
-
-    // Create main group with zoom behavior
-    const g = svg.append('g')
-      .attr('transform', 'translate(100, 50)');
-
-    // Add zoom behavior
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 3])
-      .on('zoom', (event) => {
-        g.attr('transform', event.transform);
-      });
-
-    svg.call(zoom);
-
-    // Get colors based on color scheme
+  // Memoize color functions to avoid recalculation
+  const colorFunctions = useMemo(() => {
     const getNodeColor = (node: HierarchyNode) => {
       const { colorScheme } = uiSettings;
-      
+
       if (colorScheme === 'dark') {
         switch (node.status) {
           case 'skip': return '#7f1d1d';
@@ -92,7 +65,6 @@ export default function HierarchyVisualization({ data, config, onNodeClick, onNo
           default: return '#6b7280';
         }
       } else {
-        // Default theme
         switch (node.status) {
           case 'skip': return '#ef4444';
           case 'invert': return '#f59e0b';
@@ -105,179 +77,251 @@ export default function HierarchyVisualization({ data, config, onNodeClick, onNo
       return uiSettings.colorScheme === 'dark' ? '#f9fafb' : '#ffffff';
     };
 
-    // Add links
-    const links = g.selectAll('.link')
-      .data(treeData.links())
-      .enter()
-      .append('path')
-      .attr('class', 'link')
-      .attr('d', d3.linkHorizontal<d3.HierarchyLink<HierarchyNode>, d3.HierarchyPointNode<HierarchyNode>>()
-        .x(d => d.y)
-        .y(d => d.x))
-      .style('fill', 'none')
-      .style('stroke', uiSettings.colorScheme === 'dark' ? '#6b7280' : '#9ca3af')
-      .style('stroke-width', 2)
-      .style('opacity', 0.7);
+    return { getNodeColor, getTextColor };
+  }, [uiSettings.colorScheme]);
 
-    // Filter nodes based on search and status filter
-    const filteredNodes = treeData.descendants().filter(d => {
-      const matchesSearch = !uiSettings.searchTerm || 
-        d.data.name.toLowerCase().includes(uiSettings.searchTerm.toLowerCase());
-      
-      const matchesStatusFilter = uiSettings.statusFilter === 'all' || 
-        d.data.status === uiSettings.statusFilter;
-      
-      return matchesSearch && matchesStatusFilter;
+  const handleResize = useCallback(() => {
+    if (svgRef.current?.parentElement) {
+      const rect = svgRef.current.parentElement.getBoundingClientRect();
+      setDimensions({
+        width: Math.max(800, rect.width - 40),
+        height: Math.max(600, rect.height - 40)
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [handleResize]);
+
+  useEffect(() => {
+    if (!svgRef.current || !filteredData) return;
+
+    const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
+
+
+    const nodeWidth = Math.min(config.nodeWidth, 100); // Limit max width for performance
+    const nodeHeight = Math.max(config.nodeHeight, uiSettings.nodeHeight);
+    const fontSize = Math.min(uiSettings.fontSize, 16); // Limit font size for performance
+
+
+    const root = d3.hierarchy(filteredData, d => d.children);
+
+    // Limit tree depth for performance (only show first 3 levels by default)
+    const maxDepth = 3;
+    root.each(d => {
+      if (d.depth >= maxDepth && d.children) {
+        (d as any)._children = d.children;
+        d.children = undefined;
+      }
     });
 
-    // Add nodes
-    const nodes = g.selectAll('.node')
-      .data(filteredNodes)
-      .enter()
-      .append('g')
-      .attr('class', 'node')
-      .attr('transform', d => `translate(${d.y}, ${d.x})`)
-      .style('cursor', 'pointer');
 
-    // Node rectangles
-    nodes.append('rect')
-      .attr('width', nodeWidth)
-      .attr('height', nodeHeight)
-      .attr('x', -nodeWidth / 2)
-      .attr('y', -nodeHeight / 2)
-      .attr('rx', uiSettings.colorScheme === 'minimal' ? 4 : 8)
-      .style('fill', d => getNodeColor(d.data))
-      .style('stroke', uiSettings.colorScheme === 'dark' ? '#374151' : '#ffffff')
-      .style('stroke-width', uiSettings.colorScheme === 'minimal' ? 1 : 2)
-      .style('filter', uiSettings.colorScheme === 'minimal' ? 'none' : 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))')
-      .on('mouseover', function(event, d) {
-        d3.select(this)
-          .transition()
-          .duration(200)
-          .style('transform', 'scale(1.05)')
-          .style('filter', uiSettings.colorScheme === 'minimal' ? 'none' : 'drop-shadow(0 6px 12px rgba(0, 0, 0, 0.2))');
-      })
-      .on('mouseout', function(event, d) {
-        d3.select(this)
-          .transition()
-          .duration(200)
-          .style('transform', 'scale(1)')
-          .style('filter', uiSettings.colorScheme === 'minimal' ? 'none' : 'drop-shadow(0 4px 6px rgba(0, 0, 0, 0.1))');
-      });
+    // Create tree layout with optimized spacing
+    const treeLayout = d3.tree<HierarchyNode>()
+        .size([dimensions.height - 100, dimensions.width - 200])
+        .separation((a, b) => {
+          return a.parent === b.parent ? 1.2 : 1.5;
+        });
 
-    // Node labels (name)
-    nodes.append('text')
-      .attr('dy', '-0.3em')
-      .attr('text-anchor', 'middle')
-      .style('fill', getTextColor())
-      .style('font-size', `${fontSize}px`)
-      .style('font-weight', '600')
-      .style('pointer-events', 'none')
-      .text(d => d.data.name);
+    const treeData = treeLayout(root);
 
-    // Node values (only if showValues is enabled)
-    if (uiSettings.showValues) {
-      nodes.append('text')
-        .attr('dy', '1.2em')
+    const g = svg.append('g')
+        .attr('transform', 'translate(100, 50)');
+
+    const zoom = d3.zoom<SVGSVGElement, unknown>()
+        .scaleExtent([0.3, 2]) // Reduced zoom range for better performance
+        .on('zoom', (event) => {
+          g.style('transform', `translate3d(${event.transform.x}px, ${event.transform.y}px, 0) scale(${event.transform.k})`);
+        });
+
+    svg.call(zoom);
+
+    const nodes = treeData.descendants();
+    const links = treeData.links();
+
+    g.selectAll('.link')
+        .data(links)
+        .enter()
+        .append('path')
+        .attr('class', 'link')
+        .attr('d', d3.linkHorizontal<d3.HierarchyLink<HierarchyNode>, d3.HierarchyPointNode<HierarchyNode>>()
+            .x(d => d.y)
+            .y(d => d.x))
+        .style('fill', 'none')
+        .style('stroke', uiSettings.colorScheme === 'dark' ? '#6b7280' : '#9ca3af')
+        .style('stroke-width', 1.5) // Reduced stroke width
+        .style('opacity', 0.6);
+
+    const nodeSelection = g.selectAll('.node')
+        .data(nodes)
+        .enter()
+        .append('g')
+        .attr('class', 'node')
+        .attr('transform', d => `translate(${d.y}, ${d.x})`)
+        .style('cursor', 'pointer');
+
+
+    nodeSelection.append('rect')
+        .attr('width', nodeWidth)
+        .attr('height', nodeHeight)
+        .attr('x', -nodeWidth / 2)
+        .attr('y', -nodeHeight / 2)
+        .attr('rx', 6) // Fixed border radius for consistency
+        .style('fill', d => colorFunctions.getNodeColor(d.data))
+        .style('stroke', uiSettings.colorScheme === 'dark' ? '#374151' : '#ffffff')
+        .style('stroke-width', 1.5)
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        .on('mouseover', function(_event, _d) {
+          d3.select(this).style('opacity', 0.8);
+        })
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        .on('mouseout', function(_event, _d) {
+          d3.select(this).style('opacity', 1);
+        });
+
+    // Node labels (name) with optimized text rendering
+    nodeSelection.append('text')
+        .attr('dy', uiSettings.showValues ? '-0.3em' : '0.35em')
         .attr('text-anchor', 'middle')
-        .style('fill', getTextColor())
-        .style('font-size', `${fontSize - 2}px`)
-        .style('font-weight', '500')
-        .style('pointer-events', 'none')
-        .text(d => d.data.calculatedValue.toFixed(1));
-    }
-
-    // Child count indicators (only if showChildCount is enabled)
-    if (uiSettings.showChildCount) {
-      nodes.filter(d => d.data.children && d.data.children.length > 0)
-        .append('circle')
-        .attr('cx', nodeWidth / 2 - 15)
-        .attr('cy', nodeHeight / 2 - 15)
-        .attr('r', 10)
-        .style('fill', uiSettings.colorScheme === 'dark' ? '#374151' : '#f3f4f6')
-        .style('stroke', getTextColor())
-        .style('stroke-width', 1);
-
-      nodes.filter(d => d.data.children && d.data.children.length > 0)
-        .append('text')
-        .attr('x', nodeWidth / 2 - 15)
-        .attr('y', nodeHeight / 2 - 15)
-        .attr('dy', '0.35em')
-        .attr('text-anchor', 'middle')
-        .style('fill', uiSettings.colorScheme === 'dark' ? '#f9fafb' : '#374151')
-        .style('font-size', `${Math.max(10, fontSize - 4)}px`)
+        .style('fill', colorFunctions.getTextColor())
+        .style('font-size', `${fontSize}px`)
         .style('font-weight', '600')
         .style('pointer-events', 'none')
-        .text(d => d.data.children!.length);
+        .text(d => {
+          const maxLength = Math.floor(nodeWidth / (fontSize * 0.6));
+          return d.data.name.length > maxLength
+              ? d.data.name.substring(0, maxLength - 3) + '...'
+              : d.data.name;
+        });
+
+
+    if (uiSettings.showValues) {
+      nodeSelection.append('text')
+          .attr('dy', '1.2em')
+          .attr('text-anchor', 'middle')
+          .style('fill', colorFunctions.getTextColor())
+          .style('font-size', `${fontSize - 2}px`)
+          .style('font-weight', '500')
+          .style('pointer-events', 'none')
+          .text(d => {
+            // Simplified number formatting
+            const value = d.data.calculatedValue;
+            if (Math.abs(value) >= 1000) {
+              return `${(value / 1000).toFixed(1)}K`;
+            }
+            return value.toFixed(1);
+          });
     }
 
-    // Status indicators
-    nodes.filter(d => d.data.status !== 'normal')
-      .append('circle')
-      .attr('cx', nodeWidth / 2 - 10)
-      .attr('cy', -nodeHeight / 2 + 10)
-      .attr('r', 6)
-      .style('fill', d => d.data.status === 'skip' ? '#dc2626' : '#d97706')
-      .style('stroke', 'white')
-      .style('stroke-width', 2);
+    if (uiSettings.showChildCount) {
+      nodeSelection.filter(d => Array.isArray(d.data.children) && d.data.children.length > 0)
+          .append('circle')
+          .attr('cx', nodeWidth / 2 - 12)
+          .attr('cy', nodeHeight / 2 - 12)
+          .attr('r', 8)
+          .style('fill', uiSettings.colorScheme === 'dark' ? '#374151' : '#f3f4f6')
+          .style('stroke', colorFunctions.getTextColor())
+          .style('stroke-width', 1);
 
-    // Add event listeners
-    nodes
-      .on('click', (event, d) => {
-        event.stopPropagation();
-        onNodeClick(d.data.id);
-      })
-      .on('contextmenu', (event, d) => {
-        event.preventDefault();
-        const [x, y] = d3.pointer(event, document.body);
-        onNodeRightClick(d.data.id, x, y);
-      });
+      nodeSelection.filter(d => Array.isArray(d.data.children) && d.data.children.length > 0)
+          .append('text')
+          .attr('x', nodeWidth / 2 - 12)
+          .attr('y', nodeHeight / 2 - 12)
+          .attr('dy', '0.35em')
+          .attr('text-anchor', 'middle')
+          .style('fill', uiSettings.colorScheme === 'dark' ? '#f9fafb' : '#374151')
+          .style('font-size', `${Math.max(10, fontSize - 4)}px`)
+          .style('font-weight', '600')
+          .style('pointer-events', 'none')
+          .text(d => Math.min(d.data.children!.length, 99)); // Cap at 99 for display
+    }
 
-    // Add legend
+    nodeSelection.filter(d => d.data.status !== 'normal')
+        .append('circle')
+        .attr('cx', nodeWidth / 2 - 8)
+        .attr('cy', -nodeHeight / 2 + 8)
+        .attr('r', 4)
+        .style('fill', d => d.data.status === 'skip' ? '#dc2626' : '#d97706')
+        .style('stroke', 'white')
+        .style('stroke-width', 1);
+
+
+    let clickTimeout: number;
+    nodeSelection
+        .on('click', (event, d) => {
+          event.stopPropagation();
+          // Debounce clicks to prevent rapid firing
+          clearTimeout(clickTimeout);
+          clickTimeout = setTimeout(() => {
+            onNodeClick(d.data.id);
+          }, 100);
+        })
+        .on('contextmenu', (event, d) => {
+          event.preventDefault();
+          const [x, y] = d3.pointer(event, document.body);
+          onNodeRightClick(d.data.id, x, y);
+        });
+
+    // Simplified legend with fewer items
     const legend = svg.append('g')
-      .attr('class', 'legend')
-      .attr('transform', `translate(20, ${dimensions.height - 150})`);
+        .attr('class', 'legend')
+        .attr('transform', `translate(20, ${dimensions.height - 120})`);
 
     const legendData = [
-      { color: getNodeColor({ status: 'normal', children: [{}] } as any), label: 'Parent Node', status: 'normal' },
-      { color: getNodeColor({ status: 'normal', children: undefined } as any), label: 'Leaf Node', status: 'normal' },
-      { color: getNodeColor({ status: 'skip' } as any), label: 'Skipped', status: 'skip' },
-      { color: getNodeColor({ status: 'invert' } as any), label: 'Inverted', status: 'invert' },
+      { color: colorFunctions.getNodeColor({ status: 'normal', children: [{}] } as any), label: 'Parent' },
+      { color: colorFunctions.getNodeColor({ status: 'normal', children: undefined } as any), label: 'Leaf' },
+      { color: colorFunctions.getNodeColor({ status: 'skip' } as any), label: 'Skip' },
+      { color: colorFunctions.getNodeColor({ status: 'invert' } as any), label: 'Invert' },
     ];
 
     const legendItems = legend.selectAll('.legend-item')
-      .data(legendData)
-      .enter()
-      .append('g')
-      .attr('class', 'legend-item')
-      .attr('transform', (d, i) => `translate(0, ${i * 25})`);
+        .data(legendData)
+        .enter()
+        .append('g')
+        .attr('class', 'legend-item')
+        .attr('transform', (_d, i) => `translate(0, ${i * 20})`);
 
     legendItems.append('rect')
-      .attr('width', 18)
-      .attr('height', 18)
-      .attr('rx', 4)
-      .style('fill', d => d.color);
+        .attr('width', 14)
+        .attr('height', 14)
+        .attr('rx', 3)
+        .style('fill', d => d.color);
 
     legendItems.append('text')
-      .attr('x', 25)
-      .attr('y', 14)
-      .style('font-size', `${fontSize}px`)
-      .style('fill', uiSettings.colorScheme === 'dark' ? '#f9fafb' : '#374151')
-      .style('font-weight', '500')
-      .text(d => d.label);
+        .attr('x', 20)
+        .attr('y', 11)
+        .style('font-size', `${fontSize - 1}px`)
+        .style('fill', uiSettings.colorScheme === 'dark' ? '#f9fafb' : '#374151')
+        .style('font-weight', '500')
+        .text(d => d.label);
 
-  }, [data, config, dimensions, onNodeClick, onNodeRightClick, uiSettings]);
+    // Cleanup function
+    return () => {
+      clearTimeout(clickTimeout);
+    };
+
+  }, [filteredData, config, dimensions, onNodeClick, onNodeRightClick, uiSettings, colorFunctions]);
 
   return (
-    <div className={`w-full h-full rounded-lg overflow-hidden shadow-sm border border-gray-200 ${
-      uiSettings.colorScheme === 'dark' ? 'bg-gray-800' : 'bg-white'
-    }`}>
-      <svg
-        ref={svgRef}
-        width={dimensions.width}
-        height={dimensions.height}
-        className="w-full h-full"
-      />
-    </div>
+      <div className={`w-full h-full rounded-lg overflow-hidden shadow-sm border border-gray-200 ${
+          uiSettings.colorScheme === 'dark' ? 'bg-gray-800' : 'bg-white'
+      }`}>
+        <svg
+            ref={svgRef}
+            width={dimensions.width}
+            height={dimensions.height}
+            className="w-full h-full"
+            style={{
+              // Enable hardware acceleration
+              transform: 'translateZ(0)',
+              backfaceVisibility: 'hidden',
+              perspective: 1000
+            }}
+        />
+      </div>
   );
 }

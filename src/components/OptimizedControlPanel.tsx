@@ -1,9 +1,9 @@
 import React, { memo, useCallback, useState } from 'react';
-import { 
+import {
   Settings,
-  Database, 
-  Expand, 
-  Minimize2, 
+  Database,
+  Expand,
+  Minimize2,
   Layers,
   Zap,
   BarChart3,
@@ -14,6 +14,7 @@ import {
   EyeOff,
   Search
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useHierarchyStore } from '../store/hierarchyStore';
 import { sampleHierarchy, largeSampleHierarchy, createMassiveDataset } from '../utils/sampleData';
 import PerformanceMonitor from './PerformanceMonitor';
@@ -31,7 +32,7 @@ const OptimizedControlPanel = memo(({ nodeCount }: Props) => {
     isCalculating,
     calculationProgress,
     uiSettings,
-    updateUiSettings
+    updateUiSettings,
   } = useHierarchyStore();
   
   const [expandedSections, setExpandedSections] = useState<Set<string>>(
@@ -75,12 +76,11 @@ const OptimizedControlPanel = memo(({ nodeCount }: Props) => {
     id, 
     title, 
     icon: Icon, 
-    children, 
-    defaultExpanded = false 
+    children
   }: {
     id: string;
     title: string;
-    icon: React.ComponentType<{ size?: number; className?: string }>;
+    icon: LucideIcon;
     children: React.ReactNode;
     defaultExpanded?: boolean;
   }) => {
@@ -113,7 +113,8 @@ const OptimizedControlPanel = memo(({ nodeCount }: Props) => {
       </div>
     );
   };
-  
+
+
   return (
     <div className="space-y-4">
       {/* Performance Monitor */}
@@ -143,7 +144,7 @@ const OptimizedControlPanel = memo(({ nodeCount }: Props) => {
             className="w-full flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
           >
             <Zap size={16} />
-            <span>Massive Dataset (50,000+ nodes)</span>
+            <span>Massive Dataset (10,000+ nodes)</span>
           </button>
         </div>
       </ControlSection>

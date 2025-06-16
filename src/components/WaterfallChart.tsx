@@ -1,9 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import { HierarchyNode } from '../types/hierarchy';
 
-interface Props {
-  data: HierarchyNode;
+interface HierarchyNode {
+  name: string;
+  calculatedValue: number;
+  status?: 'skip' | 'invert' | 'normal';
+  children?: HierarchyNode[];
 }
 
 interface WaterfallData {
@@ -15,11 +17,27 @@ interface WaterfallData {
   isInverted: boolean;
 }
 
+interface Props {
+  data: HierarchyNode;
+}
+
 export default function WaterfallChart({ data }: Props) {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!svgRef.current || !data) return;
+    if (!canvasRef.current || !data) return;
+
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Set canvas size with device pixel ratio for sharp rendering
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.scale(dpr, dpr);
 
     // Prepare waterfall data
     const waterfallData: WaterfallData[] = [];
@@ -35,21 +53,27 @@ export default function WaterfallChart({ data }: Props) {
       isInverted: false
     });
 
-    // Process each quarter and month
-    data.children?.forEach(quarter => {
-      quarter.children?.forEach(month => {
-        const value = month.calculatedValue;
+    // Process data - flatten all values
+    const processNode = (node: HierarchyNode) => {
+      if (node.children) {
+        node.children.forEach(child => processNode(child));
+      } else {
+        const value = node.calculatedValue;
         cumulative += value;
-        
+
         waterfallData.push({
-          name: month.name,
+          name: node.name,
           value: value,
           cumulative: cumulative,
           type: value >= 0 ? 'positive' : 'negative',
-          isSkipped: month.status === 'skip',
-          isInverted: month.status === 'invert'
+          isSkipped: node.status === 'skip',
+          isInverted: node.status === 'invert'
         });
-      });
+      }
+    };
+
+    data.children?.forEach(quarter => {
+      quarter.children?.forEach(month => processNode(month));
     });
 
     // Add total
@@ -62,162 +86,124 @@ export default function WaterfallChart({ data }: Props) {
       isInverted: false
     });
 
-    // Clear previous chart
-    const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
+    // Clear canvas
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
     const margin = { top: 40, right: 30, bottom: 80, left: 80 };
-    const width = 900 - margin.left - margin.right;
-    const height = 500 - margin.top - margin.bottom;
-
-    const g = svg.append('g')
-      .attr('transform', `translate(${margin.left},${margin.top})`);
+    const width = rect.width - margin.left - margin.right;
+    const height = rect.height - margin.top - margin.bottom;
 
     // Scales
     const xScale = d3.scaleBand()
-      .domain(waterfallData.map(d => d.name))
-      .range([0, width])
-      .padding(0.2);
+        .domain(waterfallData.map(d => d.name))
+        .range([0, width])
+        .padding(0.2);
 
     const maxValue = Math.max(...waterfallData.map(d => Math.max(d.cumulative, d.cumulative - d.value)));
     const minValue = Math.min(0, ...waterfallData.map(d => Math.min(d.cumulative, d.cumulative - d.value)));
 
     const yScale = d3.scaleLinear()
-      .domain([minValue * 1.1, maxValue * 1.1])
-      .range([height, 0]);
+        .domain([minValue * 1.1, maxValue * 1.1])
+        .range([height, 0]);
 
-    // Add axes
-    g.append('g')
-      .attr('transform', `translate(0,${height})`)
-      .call(d3.axisBottom(xScale))
-      .selectAll('text')
-      .style('text-anchor', 'end')
-      .style('font-size', '12px')
-      .style('font-weight', '500')
-      .attr('dx', '-.8em')
-      .attr('dy', '.15em')
-      .attr('transform', 'rotate(-45)');
+    ctx.save();
+    ctx.translate(margin.left, margin.top);
 
-    g.append('g')
-      .call(d3.axisLeft(yScale).tickFormat(d => `${d}`))
-      .selectAll('text')
-      .style('font-size', '12px')
-      .style('font-weight', '500');
+    // Draw axes
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
 
-    // Add zero line
-    g.append('line')
-      .attr('x1', 0)
-      .attr('x2', width)
-      .attr('y1', yScale(0))
-      .attr('y2', yScale(0))
-      .style('stroke', '#666')
-      .style('stroke-width', 1)
-      .style('stroke-dasharray', '3,3');
+    // X-axis
+    ctx.beginPath();
+    ctx.moveTo(0, height);
+    ctx.lineTo(width, height);
+    ctx.stroke();
 
-    // Add bars
-    waterfallData.forEach((d, i) => {
-      if (i === 0) return; // Skip start point
+    // Y-axis
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, height);
+    ctx.stroke();
 
-      const barHeight = Math.abs(yScale(d.cumulative) - yScale(d.cumulative - d.value));
-      const barY = d.value >= 0 ? yScale(d.cumulative) : yScale(d.cumulative - d.value);
+    // Draw bars in batches for better performance
+    const batchSize = 100;
+    let currentBatch = 0;
 
-      let barColor = '#3b82f6'; // Default blue
-      if (d.type === 'total') barColor = '#1f2937'; // Dark gray for totals
-      else if (d.isSkipped) barColor = '#ef4444'; // Red for skipped
-      else if (d.isInverted) barColor = '#f59e0b'; // Orange for inverted
-      else if (d.value < 0) barColor = '#ef4444'; // Red for negative
+    const drawBatch = () => {
+      const startIdx = currentBatch * batchSize + 1;
+      const endIdx = Math.min(startIdx + batchSize, waterfallData.length);
 
-      // Add connecting line from previous bar
-      if (i > 1) {
-        const prevData = waterfallData[i - 1];
-        g.append('line')
-          .attr('x1', xScale(prevData.name)! + xScale.bandwidth())
-          .attr('x2', xScale(d.name)!)
-          .attr('y1', yScale(prevData.cumulative))
-          .attr('y2', yScale(d.cumulative - d.value))
-          .style('stroke', '#999')
-          .style('stroke-width', 1)
-          .style('stroke-dasharray', '2,2')
-          .style('opacity', 0.7);
+      for (let i = startIdx; i < endIdx; i++) {
+        const d = waterfallData[i];
+
+        const barHeight = Math.abs(yScale(d.cumulative) - yScale(d.cumulative - d.value));
+        const barY = d.value >= 0 ? yScale(d.cumulative) : yScale(d.cumulative - d.value);
+        const barX = xScale(d.name) || 0;
+        const barWidth = xScale.bandwidth();
+
+        if (d.type === 'total') ctx.fillStyle = '#1f2937';
+        else if (d.isSkipped) ctx.fillStyle = '#ef4444';
+        else if (d.isInverted) ctx.fillStyle = '#f59e0b';
+        else if (d.value < 0) ctx.fillStyle = '#ef4444';
+        else ctx.fillStyle = '#3b82f6';
+
+        // Draw bar
+        ctx.globalAlpha = d.isSkipped ? 0.6 : 0.9;
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+
+        // Draw border
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
       }
 
-      // Add bar
-      g.append('rect')
-        .attr('x', xScale(d.name)!)
-        .attr('y', barY)
-        .attr('width', xScale.bandwidth())
-        .attr('height', barHeight)
-        .style('fill', barColor)
-        .style('opacity', d.isSkipped ? 0.6 : 0.9)
-        .style('stroke', '#fff')
-        .style('stroke-width', 2)
-        .style('filter', 'drop-shadow(0 2px 4px rgba(0,0,0,0.1))');
+      currentBatch++;
 
-      // Add value labels
-      g.append('text')
-        .attr('x', xScale(d.name)! + xScale.bandwidth() / 2)
-        .attr('y', barY - 8)
-        .attr('text-anchor', 'middle')
-        .style('font-size', '13px')
-        .style('font-weight', '600')
-        .style('fill', '#374151')
-        .text(d.value.toFixed(1));
-    });
+      // Continue drawing if more batches remain
+      if (endIdx < waterfallData.length) {
+        requestAnimationFrame(drawBatch);
+      } else {
+        // Draw axis labels after all bars are drawn
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#374151';
+        ctx.font = '12px sans-serif';
 
-    // Add title
-    svg.append('text')
-      .attr('x', width / 2 + margin.left)
-      .attr('y', margin.top / 2)
-      .attr('text-anchor', 'middle')
-      .style('font-size', '18px')
-      .style('font-weight', '700')
-      .style('fill', '#1f2937')
-      .text('Revenue Waterfall Analysis');
+        // Sample x-axis labels (show every nth label for performance)
+        const labelInterval = Math.ceil(waterfallData.length / 20);
+        waterfallData.forEach((d, i) => {
+          if (i % labelInterval === 0) {
+            const x = (xScale(d.name) || 0) + xScale.bandwidth() / 2;
+            ctx.save();
+            ctx.translate(x, height + 20);
+            ctx.rotate(-Math.PI / 4);
+            ctx.textAlign = 'right';
+            ctx.fillText(d.name, 0, 0);
+            ctx.restore();
+          }
+        });
 
-    // Add legend
-    const legend = svg.append('g')
-      .attr('class', 'legend')
-      .attr('transform', `translate(${width - 200}, 60)`);
+        // Y-axis labels
+        const yTicks = yScale.ticks(10);
+        yTicks.forEach(tick => {
+          const y = yScale(tick);
+          ctx.textAlign = 'right';
+          ctx.fillText(tick.toString(), -10, y + 4);
+        });
+      }
+    };
 
-    const legendData = [
-      { color: '#3b82f6', label: 'Normal' },
-      { color: '#ef4444', label: 'Skipped/Negative' },
-      { color: '#f59e0b', label: 'Inverted' },
-      { color: '#1f2937', label: 'Total' }
-    ];
-
-    const legendItems = legend.selectAll('.legend-item')
-      .data(legendData)
-      .enter()
-      .append('g')
-      .attr('class', 'legend-item')
-      .attr('transform', (d, i) => `translate(0, ${i * 20})`);
-
-    legendItems.append('rect')
-      .attr('width', 12)
-      .attr('height', 12)
-      .attr('rx', 2)
-      .style('fill', d => d.color);
-
-    legendItems.append('text')
-      .attr('x', 18)
-      .attr('y', 10)
-      .style('font-size', '12px')
-      .style('fill', '#374151')
-      .style('font-weight', '500')
-      .text(d => d.label);
+    requestAnimationFrame(drawBatch);
+    ctx.restore();
 
   }, [data]);
 
   return (
-    <div className="w-full bg-white rounded-lg border border-gray-200 p-4">
-      <svg
-        ref={svgRef}
-        width={900}
-        height={500}
-        className="w-full h-auto"
-        style={{ minHeight: '400px' }}
-      />
-    </div>
+      <div ref={containerRef} className="w-full bg-white rounded-lg border border-gray-200 p-4">
+        <canvas
+            ref={canvasRef}
+            className="w-full"
+            style={{ height: '500px' }}
+        />
+      </div>
   );
 }

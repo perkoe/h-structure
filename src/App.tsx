@@ -1,7 +1,6 @@
 import  { useState, useEffect, useRef } from 'react';
-import { TreePine, BarChart3, Table } from 'lucide-react';
+import { TreePine, BarChart3 } from 'lucide-react';
 import HierarchyVisualization from './components/HierarchyVisualization';
-import QuarterlyView from './components/QuarterlyView';
 import ContextMenu from './components/ContextMenu';
 import OptimizedControlPanel from './components/OptimizedControlPanel';
 import VirtualizedTree from './components/VirtualizedTree';
@@ -10,7 +9,7 @@ import { sampleHierarchy } from './utils/sampleData';
 import { countNodes } from './utils/hierarchyCalculations';
 import { VisualizationConfig, ContextMenuPosition } from './types/hierarchy';
 
-type ViewMode = 'tree' | 'quarterly' | 'virtualized';
+type ViewMode = 'tree'  | 'virtualized';
 
 function App() {
   const { 
@@ -23,7 +22,6 @@ function App() {
 
   const [contextMenu, setContextMenu] = useState<ContextMenuPosition | null>(null);
   const [viewMode, setViewMode] = useState<ViewMode>('virtualized');
-  const [showWaterfall, setShowWaterfall] = useState(true);
   
   // Create config that syncs with UI settings
   const config: VisualizationConfig = {
@@ -121,21 +119,7 @@ function App() {
               }`}
             >
               <TreePine size={18} />
-              <span className="font-medium">Virtual Tree</span>
-            </button>
-            
-            <button
-              onClick={() => setViewMode('quarterly')}
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md transition-colors ${
-                viewMode === 'quarterly'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : uiSettings.colorScheme === 'dark'
-                    ? 'text-gray-300 hover:text-white'
-                    : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <Table size={18} />
-              <span className="font-medium">Quarterly</span>
+              <span className="font-medium">Data view</span>
             </button>
             
             <button
@@ -173,47 +157,6 @@ function App() {
               onContextMenu={handleNodeRightClick}
               height={treeHeight}
             />
-          )}
-
-          {viewMode === 'quarterly' && hierarchyData && (
-            <div className="space-y-6 overflow-y-auto h-full">
-              {/* Waterfall Toggle */}
-              <div className={`flex items-center justify-between p-4 rounded-lg shadow-sm border ${
-                uiSettings.colorScheme === 'dark' 
-                  ? 'bg-gray-800 border-gray-700' 
-                  : 'bg-white border-gray-200'
-              }`}>
-                <div>
-                  <h2 className={`text-xl font-semibold ${
-                    uiSettings.colorScheme === 'dark' ? 'text-white' : 'text-gray-900'
-                  }`}>Quarterly Analysis</h2>
-                  <p className={`text-sm mt-1 ${
-                    uiSettings.colorScheme === 'dark' ? 'text-gray-300' : 'text-gray-600'
-                  }`}>
-                    Click on month names to toggle between Normal → Skip → Invert. Waterfall charts show the flow of values.
-                  </p>
-                </div>
-                <button
-                  onClick={() => setShowWaterfall(!showWaterfall)}
-                  className={`flex items-center space-x-2 px-6 py-3 rounded-lg transition-colors font-medium ${
-                    showWaterfall
-                      ? 'bg-blue-600 text-white shadow-md hover:bg-blue-700'
-                      : uiSettings.colorScheme === 'dark'
-                        ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                  }`}
-                >
-                  <BarChart3 size={20} />
-                  <span>{showWaterfall ? 'Hide' : 'Show'} Waterfall Charts</span>
-                </button>
-              </div>
-
-              <QuarterlyView
-                data={hierarchyData}
-                onNodeStatusChange={handleStatusChange}
-                showWaterfall={showWaterfall}
-              />
-            </div>
           )}
 
           {viewMode === 'tree' && hierarchyData && (

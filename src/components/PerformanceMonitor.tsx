@@ -56,16 +56,15 @@ export default function PerformanceMonitor() {
       }
     };
   }, []);
-  
-  // Hook into render timing
+
   useEffect(() => {
     renderStart.current = performance.now();
-    
+
     return () => {
       const renderTime = performance.now() - renderStart.current;
       setStats(prev => ({ ...prev, renderTime }));
     };
-  });
+  }, []);
   
   return (
     <div className="bg-gray-900 text-white p-3 rounded-lg text-sm font-mono">

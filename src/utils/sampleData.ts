@@ -126,33 +126,32 @@ export const largeSampleHierarchy: HierarchyNode = {
 
 initializeCalculatedValues(largeSampleHierarchy);
 
-// Create massive dataset for performance testing
 export function createMassiveDataset(): HierarchyNode {
   const massiveHierarchy: HierarchyNode = {
     id: 'massive-root',
-    name: 'Enterprise Dataset (50K+ nodes)',
+    name: 'Enterprise Dataset (~10K nodes)',
     status: 'normal',
     calculatedValue: 0,
     depth: 0,
-    children: Array.from({ length: 10 }, (_, regionIndex) => ({
+    children: Array.from({ length: 5 }, (_, regionIndex) => ({
       id: `region-${regionIndex}`,
       name: `Region ${regionIndex + 1}`,
       status: 'normal' as const,
       calculatedValue: 0,
       depth: 1,
-      children: Array.from({ length: 20 }, (_, divisionIndex) => ({
+      children: Array.from({ length: 10 }, (_, divisionIndex) => ({
         id: `region-${regionIndex}-division-${divisionIndex}`,
         name: `Division ${divisionIndex + 1}`,
         status: 'normal' as const,
         calculatedValue: 0,
         depth: 2,
-        children: Array.from({ length: 25 }, (_, teamIndex) => ({
+        children: Array.from({ length: 10 }, (_, teamIndex) => ({
           id: `region-${regionIndex}-division-${divisionIndex}-team-${teamIndex}`,
           name: `Team ${teamIndex + 1}`,
           status: 'normal' as const,
           calculatedValue: 0,
           depth: 3,
-          children: Array.from({ length: 10 }, (_, memberIndex) => ({
+          children: Array.from({ length: 20 }, (_, memberIndex) => ({
             id: `region-${regionIndex}-division-${divisionIndex}-team-${teamIndex}-member-${memberIndex}`,
             name: `Member ${memberIndex + 1}`,
             value: Math.random() * 10000 + 1000,
