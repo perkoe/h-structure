@@ -26,10 +26,12 @@ A React-based tool for visualizing and manipulating large hierarchical datasets 
 
 - Expand/collapse nodes to explore the hierarchy.
 - Right-click a node to invert or skip its value.
-- ![img.png](img.png)
-- ![img_1.png](img_1.png)
-- Use the context menu for bulk actions on subtrees (where supported).
-- Filter or search for nodes using the UI controls.
+
+ ![img.png](img.png)
+ 
+ ![img_1.png](img_1.png)
+
+- Filter  nodes using the UI controls.
 
 ## Extras
 
