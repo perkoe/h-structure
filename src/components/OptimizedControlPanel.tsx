@@ -379,17 +379,12 @@ const OptimizedControlPanel = memo(({ nodeCount }: Props) => {
           </div>
         )}
       </ControlSection>
-      
-      {/* Instructions */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="text-lg font-semibold text-blue-900 mb-3">Performance Features</h4>
+        <h4 className="text-lg font-semibold text-blue-900 mb-3">Instructions</h4>
         <div className="space-y-2 text-sm text-blue-800">
-          <p>• <strong>Virtual Rendering:</strong> Only visible nodes are in DOM</p>
-          <p>• <strong>Lazy Expansion:</strong> Children load on demand</p>
-          <p>• <strong>Optimized Calculations:</strong> Batched and cached</p>
-          <p>• <strong>Memory Efficient:</strong> Minimal re-renders</p>
-          <p>• <strong>Smooth Scrolling:</strong> 60fps with large datasets</p>
-          <p>• <strong>Right-click:</strong> Context menu for bulk operations</p>
+          <p>• <strong>Expand/Collapse:</strong> Click the arrow beside any node to show or hide its children.</p>
+          <p>• <strong>Right-click:</strong> Open the context menu for quick actions (invert, skip, back to normal).</p>
+          <p>• <strong>Bulk operations:</strong> Right-click a parent node to apply actions to all its children.</p>
         </div>
       </div>
     </div>
